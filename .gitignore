@@ -68,3 +68,5 @@ dmypy.json
 # PyCharm
 .idea/
 
+# Environment variables
+.env
