@@ -6,6 +6,7 @@ import logging
 import httpx
 
 from model.stock_data import StockFundamentalData
+from utils.utils import safe_float_conversion
 
 # -- Logging Configuration --
 # Configure basic logging to console (optional, but ensures console output)
@@ -71,25 +72,6 @@ async def get_stock_fundamental_data(symbol: str) -> Optional[StockFundamentalDa
     except requests.exceptions.RequestException as e:
         print(f"An error occurred during API request: {e}")
         return None
-
-
-
-
-
-
-# --- Helper Functions ---
-def safe_float_conversion(value: Optional[str]) -> Optional[float]:
-    """
-    A safe conversion function to convert API string responses to floats.
-    It correctly handles 'None' strings and potential conversion errors.
-    """
-    if value is None or value == 'None':
-        return None
-    try:
-        return float(value)
-    except (ValueError, TypeError):
-        return None
-
 
 
 async def fetch_balance_sheet(symbol: str) -> Optional[dict]:
