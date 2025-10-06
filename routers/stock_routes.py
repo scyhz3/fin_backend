@@ -2,12 +2,12 @@ from fastapi import APIRouter, HTTPException
 from typing import List
 from server import stock_server
 
-from model.stock_data import StockFundamentalData
+from model.stock_data import StockFundamentalDataMongoDB
 
 router = APIRouter()
 
 @router.get("/stock/{symbol}",
-         response_model=StockFundamentalData,
+         response_model=StockFundamentalDataMongoDB,
          tags=["Stocks"])
 async def get_stock_fundamental_data(symbol: str):
 
