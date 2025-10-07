@@ -21,6 +21,22 @@ API_KEY = os.getenv('ALPHAVANTAGE_API_KEY')
 MAIN_URL = "https://www.alphavantage.co/query"
 
 
+# --- Read Stock Data Function ---
+async def read_stock_fundamental_data(symbol: str) -> Optional[StockFundamentalDataMongoDB]:
+    """
+    Reads fundamental stock data from the database.
+    Returns None if the stock is not found.
+    """
+    logger.info(f"Reading fundamental data for symbol: {symbol} from database.")
+    stock_document = await StockFundamentalDataMongoDB.find_one(StockFundamentalDataMongoDB.symbol == symbol)
+    if stock_document:
+        logger.info(f"Found document for {symbol} in database.")
+    else:
+        logger.info(f"No document found for {symbol} in database.")
+    return stock_document
+
+
+
 # --- Get Stock data Function ---
 async def get_stock_fundamental_data(symbol: str) -> Optional[StockFundamentalDataMongoDB]:
     """
