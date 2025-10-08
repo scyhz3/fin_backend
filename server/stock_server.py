@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import logging
 import httpx
 
-from model.stock_data import StockFundamentalData
+from model.stock_data import StockFundamentalDataMongoDB
 from utils.utils import safe_float_conversion
 
 # -- Logging Configuration --
@@ -21,8 +21,24 @@ API_KEY = os.getenv('ALPHAVANTAGE_API_KEY')
 MAIN_URL = "https://www.alphavantage.co/query"
 
 
+# --- Read Stock Data Function ---
+async def read_stock_fundamental_data(symbol: str) -> Optional[StockFundamentalDataMongoDB]:
+    """
+    Reads fundamental stock data from the database.
+    Returns None if the stock is not found.
+    """
+    logger.info(f"Reading fundamental data for symbol: {symbol} from database.")
+    stock_document = await StockFundamentalDataMongoDB.find_one(StockFundamentalDataMongoDB.symbol == symbol)
+    if stock_document:
+        logger.info(f"Found document for {symbol} in database.")
+    else:
+        logger.info(f"No document found for {symbol} in database.")
+    return stock_document
+
+
+
 # --- Get Stock data Function ---
-async def get_stock_fundamental_data(symbol: str) -> Optional[StockFundamentalData]:
+async def get_stock_fundamental_data(symbol: str) -> Optional[StockFundamentalDataMongoDB]:
     """
     Fetches fundamental stock data and returns a Pydantic model instance.
     Returns None if the stock is not found or an API error occurs.
@@ -47,30 +63,53 @@ async def get_stock_fundamental_data(symbol: str) -> Optional[StockFundamentalDa
         balance_sheet_data = await fetch_balance_sheet(symbol)
         income_statement_data = await fetch_income_statement(symbol)
 
-        # map the API
-        stock_data = StockFundamentalData(
-            symbol=data.get('Symbol'),
-            company_name=data.get('Name'),
-            market_cap=safe_float_conversion(data.get('MarketCapitalization')),
-            pe_ratio=safe_float_conversion(data.get('PERatio')),
-            dividend_yield=safe_float_conversion(data.get('DividendYield')),
-            eps=safe_float_conversion(data.get('EPS')),
-            revenue=safe_float_conversion(data.get('RevenueTTM')),  # Use TTM (Trailing Twelve Months) revenue
-            return_on_equity=safe_float_conversion(data.get('ReturnOnEquityTTM')),
-            net_income=safe_float_conversion(income_statement_data),
-            totalAssets=safe_float_conversion(balance_sheet_data["totalAssets"]),
-            totalLiabilities=safe_float_conversion(balance_sheet_data["totalLiabilities"]),
-            totalShareholderEquity=safe_float_conversion(balance_sheet_data["totalShareholderEquity"]),
-            totalCurrentAssets=safe_float_conversion(balance_sheet_data["totalCurrentAssets"]),
-            totalCurrentLiabilities=safe_float_conversion(balance_sheet_data["totalCurrentLiabilities"]),
-            longTermDebt=safe_float_conversion(balance_sheet_data["longTermDebt"]),
-            cashAndCashEquivalentsAtCarryingValue=safe_float_conversion(balance_sheet_data["cashAndCashEquivalentsAtCarryingValue"])
-        )
+        # Guard against missing data from secondary calls
+        if not balance_sheet_data or not income_statement_data:
+            logger.error(f"Could not fetch balance sheet or income statement for {symbol}")
+            return None
 
-        return stock_data
+        api_data = {
+            "symbol": data.get('Symbol'),
+            "company_name": data.get('Name'),
+            "market_cap": safe_float_conversion(data.get('MarketCapitalization')),
+            "pe_ratio": safe_float_conversion(data.get('PERatio')),
+            "dividend_yield": safe_float_conversion(data.get('DividendYield')),
+            "eps": safe_float_conversion(data.get('EPS')),
+            "revenue": safe_float_conversion(data.get('RevenueTTM')),
+            "return_on_equity": safe_float_conversion(data.get('ReturnOnEquityTTM')),
+            "net_income": safe_float_conversion(income_statement_data),
+            "total_assets": safe_float_conversion(balance_sheet_data.get("totalAssets")),
+            "total_liabilities": safe_float_conversion(balance_sheet_data.get("totalLiabilities")),
+            "total_shareholder_equity": safe_float_conversion(balance_sheet_data.get("totalShareholderEquity")),
+            "total_current_assets": safe_float_conversion(balance_sheet_data.get("totalCurrentAssets")),
+            "total_current_liabilities": safe_float_conversion(balance_sheet_data.get("totalCurrentLiabilities")),
+            "long_term_debt": safe_float_conversion(balance_sheet_data.get("longTermDebt")),
+            "cash_and_cash_equivalents": safe_float_conversion(
+                balance_sheet_data.get("cashAndCashEquivalentsAtCarryingValue"))
+        }
+
+        stock_document = await StockFundamentalDataMongoDB.find_one(StockFundamentalDataMongoDB.symbol == symbol)
+
+        if stock_document:
+            logger.info(f"Updating existing document for {symbol}.")
+            # Update existing document
+            await stock_document.set(api_data)
+        else:
+            logger.info(f"No existing document for {symbol}, creating a new one.")
+            # Create a new document from the dictionary
+            stock_document = StockFundamentalDataMongoDB(**api_data)
+            await stock_document.insert()
+
+        await stock_document.save()
+        logger.info(f"Successfully saved data for {symbol} to the database.")
+
+        return stock_document
 
     except requests.exceptions.RequestException as e:
         print(f"An error occurred during API request: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"An unexpected error occurred for {symbol}: {e}")
         return None
 
 
